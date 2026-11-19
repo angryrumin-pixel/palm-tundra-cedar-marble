@@ -1,0 +1,40 @@
+{
+  "url": "http://127.0.0.1:8081/",
+  "viewports": {
+    "desktop": {
+      "width": 1280,
+      "height": 800,
+      "status": 200,
+      "title": "Пульт",
+      "hasCanvas": false,
+      "bodyTextLen": 803,
+      "bodyTextHash": "f708c4d55d0e3e6eb9ddbcad1ed9ecb5d3a8571803033628ab05b4cd7dc98a38",
+      "bodyTextPrefix": "TWITCH · KICK · YOUTUBE Пульт Следит за выбранными стримерами и ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built.png"
+    },
+    "mobile": {
+      "width": 390,
+      "height": 844,
+      "status": 200,
+      "title": "Пульт",
+      "hasCanvas": false,
+      "bodyTextLen": 794,
+      "bodyTextHash": "533f312ace2c082001e8c9b8f52a6f0f33d80ed00284b73c9e32053034c04d7e",
+      "bodyTextPrefix": "TWITCH · KICK · YOUTUBE Пульт Следит за выбранными стримерами и ",
+      "horizontalOverflow": false,
+      "consoleErrors": [],
+      "pageErrors": [],
+      "screenshot": "/workspace/screenshots/app-builder-built-mobile.png"
+    }
+  },
+  "brandWarnings": [
+    "BRAND NOTE: no custom public/og.jpg — the platform will serve the og.grok.me placeholder. Custom cards are the default for games of every kind (DOM board/word games included), whimsical apps, creative tools, and brand-forward pages — only plain utilities (converters, CRUD trackers, admin dashboards) keep the placeholder. If this app is not a plain utility, finish the brand-asset pass per /workspace/.grok/skills/og/SKILL.md."
+  ],
+  "authWarnings": [],
+  "verdictFile": "/workspace/screenshots/app-builder-built.json",
+  "divergesFromBaseline": false,
+  "baselineReasons": []
+}
