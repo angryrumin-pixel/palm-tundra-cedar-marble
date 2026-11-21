@@ -10,7 +10,7 @@ import {
   type TwitchQuality,
 } from "@/lib/streams/twitch";
 import { currentTwitchCredential, hydrateTwitchAuth, useTwitchAuth } from "@/lib/streams/twitch-auth";
-import { grabTwitchStream } from "@/lib/streams/twitch-grab";
+import { startStreamRecord, stopStreamRecord, useStreamRecord } from "@/lib/streams/auto-record";
 import type { Channel } from "@/lib/streams/types";
 import { cn } from "@/lib/cn";
 import { proxied } from "@/lib/streams/media-proxy";
@@ -279,13 +279,11 @@ function TwitchLogin() {
 
 export function TwitchLive({ channel, sessionId }: { channel: Channel; sessionId?: string }) {
   const videoRef = useRef<HTMLVideoElement>(null);
-  const grabAbort = useRef<AbortController | null>(null);
   const authLogin = useTwitchAuth((state) => state.auth?.login || "");
+  const fileJob = useStreamRecord((state) => state.job);
   const [mode, setMode] = useState<"own" | "embed">("own");
   const [quality, setQuality] = useState<TwitchQuality>("720");
   const [status, setStatus] = useState("");
-  const [grabbing, setGrabbing] = useState(false);
-  const [grabBytes, setGrabBytes] = useState(0);
   const [parents, setParents] = useState<string[]>([]);
 
   useEffect(() => {
@@ -350,34 +348,29 @@ export function TwitchLive({ channel, sessionId }: { channel: Channel; sessionId
     };
   }, [channel.key, quality, mode, authLogin]);
 
-  useEffect(() => () => grabAbort.current?.abort(), []);
+  const grabbing = fileJob?.login === channel.key.toLowerCase();
 
   async function toggleGrab() {
     if (grabbing) {
-      grabAbort.current?.abort();
+      stopStreamRecord({ download: true, hold: true });
+      return;
+    }
+    if (fileJob) {
+      setStatus(`Сначала остановите файл «${fileJob.displayName}».`);
       return;
     }
     setStatus("");
-    const cred = await currentTwitchCredential();
-    const result = await resolveTwitchPlayback({
-      data: { login: channel.key, quality, clientId: cred.clientId, token: cred.token },
-    });
-    if (!result.ok) {
-      setStatus(result.error);
-      return;
-    }
-    const ctrl = new AbortController();
-    grabAbort.current = ctrl;
-    setGrabbing(true);
-    setGrabBytes(0);
-    const name = `pult-${slugName(channel.displayName)}-${fileStamp(new Date())}.ts`;
-    try {
-      await grabTwitchStream(result.url, name, ctrl.signal, setGrabBytes);
-    } catch {
-      if (!ctrl.signal.aborted) setStatus("Не удалось сохранить поток.");
-    } finally {
-      setGrabbing(false);
-    }
+    const started = await startStreamRecord(
+      {
+        id: sessionId || `live:${channel.id}`,
+        key: channel.key,
+        displayName: channel.displayName,
+        startedAt: Date.now(),
+      },
+      false,
+      quality,
+    );
+    if (!started && !useStreamRecord.getState().job) setStatus("Не удалось сохранить поток.");
   }
 
   const embedSrc =
@@ -430,7 +423,7 @@ export function TwitchLive({ channel, sessionId }: { channel: Channel; sessionId
             onClick={() => void toggleGrab()}
           >
             <Download className="size-4" aria-hidden="true" />
-            {grabbing ? `Стоп · ${formatBytes(grabBytes)}` : "Скачать поток"}
+            {grabbing ? `Стоп · ${formatBytes(fileJob?.bytes || 0)}` : "Скачать поток"}
           </button>
           <button
             type="button"
@@ -442,8 +435,7 @@ export function TwitchLive({ channel, sessionId }: { channel: Channel; sessionId
           <TwitchLogin />
         </div>
         <p className="text-sm leading-relaxed text-muted">
-          Свой плеер берёт поток напрямую, поэтому картинка есть даже внутри чужого окна. Вход через код Twitch
-          нужен для чата подписчиков и закрытых эфиров. Файл .ts открывается в VLC.
+          Свой плеер берёт поток напрямую. Файл .ts скачивается, когда нажмёте «Остановить», а не в конце эфира.
           {sessionId ? " Чат этой сессии пишется." : " Чат виден сразу, в журнал попадёт после старта записи."}
         </p>
       </div>

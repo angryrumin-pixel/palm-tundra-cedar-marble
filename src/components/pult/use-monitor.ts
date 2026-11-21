@@ -11,6 +11,7 @@ import {
   stopRecorder,
   useCapture,
 } from "@/components/pult/capture";
+import { savePendingRecording, stopStreamRecord, useStreamRecord } from "@/lib/streams/auto-record";
 import { checkStreams } from "@/lib/streams/check";
 import { fileStamp, formatBytes, slugName } from "@/lib/streams/format";
 import { normalizeTarget } from "@/lib/streams/normalize";
@@ -256,16 +257,26 @@ export function manualStart(channelId: string) {
 
 export function manualStop(channelId: string) {
   const state = usePult.getState();
+  const channel = state.channels.find((item) => item.id === channelId);
   const open = state.sessions.find(
     (session) => session.channelId === channelId && session.endedAt === null,
   );
-  if (!open) return;
-  const sessions = state.sessions.map((session) =>
-    session.id === open.id ? { ...session, endedAt: Date.now() } : session,
-  );
-  usePult.setState({ sessions });
-  if (!sessions.some((session) => session.endedAt === null)) stopRecorder();
-  useToasts.getState().push(["Запись остановлена"]);
+  const login = channel?.key.toLowerCase() || "";
+  const job = useStreamRecord.getState().job;
+  const recording = !!job && (job.sessionId === open?.id || job.login === login);
+  if (open) {
+    const sessions = state.sessions.map((session) =>
+      session.id === open.id ? { ...session, endedAt: Date.now() } : session,
+    );
+    usePult.setState({ sessions });
+    if (!sessions.some((session) => session.endedAt === null)) stopRecorder();
+  }
+  const willSave = recording || useStreamRecord.getState().pendingKey === login;
+  if (recording) stopStreamRecord({ download: true, hold: true });
+  else if (willSave) savePendingRecording();
+  if (open || willSave) {
+    useToasts.getState().push([willSave ? "Запись остановлена, файл скачивается" : "Запись остановлена"]);
+  }
 }
 
 export async function armScreen() {

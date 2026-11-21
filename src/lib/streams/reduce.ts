@@ -266,4 +266,5 @@ export const DEFAULT_SETTINGS: Settings = {
   sound: true,
   notify: true,
   wake: false,
+  recordStream: true,
 };

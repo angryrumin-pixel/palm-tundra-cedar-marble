@@ -63,6 +63,7 @@ export type Settings = {
   sound: boolean;
   notify: boolean;
   wake: boolean;
+  recordStream: boolean;
 };
 
 export type CheckResult = {

@@ -31,6 +31,7 @@ import { cn } from "@/lib/cn";
 import { chatBucket, downloadChatHtml, useChatLines } from "@/lib/streams/chat-log";
 import { fileStamp, formatBytes, formatClock, formatDuration, formatViewers, slugName, viewersWord } from "@/lib/streams/format";
 import { usePult, useToasts } from "@/lib/streams/store";
+import { savePendingRecording, useAutoStreamRecord, useStreamRecord } from "@/lib/streams/auto-record";
 import { useTwitchRecorders } from "@/lib/streams/twitch-chat";
 import { PLATFORM_LABEL, type Channel, type Platform, type Session, type Snapshot } from "@/lib/streams/types";
 
@@ -51,6 +52,8 @@ export function Desk() {
   const capture = useCapture();
   const { checking, nextAt } = useMonitor();
   useTwitchRecorders();
+  useAutoStreamRecord();
+  const fileJob = useStreamRecord((state) => state.job);
   const [now, setNow] = useState(() => Date.now());
   const [platform, setPlatform] = useState<Platform>("twitch");
   const [query, setQuery] = useState("");
@@ -175,12 +178,21 @@ export function Desk() {
             icon={Sun}
             onClick={() => usePult.getState().setSettings({ wake: !settings.wake })}
           />
+          <Toggle
+            on={settings.recordStream !== false}
+            label={settings.recordStream !== false ? "Файл эфира" : "Без файла"}
+            icon={Download}
+            onClick={() =>
+              usePult.getState().setSettings({ recordStream: settings.recordStream === false })
+            }
+          />
           <p className="font-mono text-xs text-muted" aria-live="polite">
             {checking
               ? "Проверяю эфиры…"
               : settings.monitor
                 ? `Следующая проверка через ${secondsLeft} с`
                 : "Монитор выключен — список не обновляется сам"}
+            {fileJob ? ` · пишу ${fileJob.displayName} · ${formatBytes(fileJob.bytes)}` : ""}
           </p>
         </div>
       </header>
@@ -346,8 +358,8 @@ export function Desk() {
               </div>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-muted">
-              Сессия пишет время, название, зрителей и чат Twitch с картинками. Поток Twitch скачивается
-              отдельным файлом .ts. Захват экрана по-прежнему нужен для Kick и YouTube.
+              Сессия пишет время, название, зрителей и чат Twitch. Файл эфира скачивается только после
+              кнопки «Остановить». Вкладку до этого не закрывайте.
             </p>
             {sessions.length === 0 ? (
               <p className="mt-4 text-sm text-fg">Записей ещё нет.</p>
@@ -582,6 +594,11 @@ function Stage({
 }) {
   const live = !!snap?.live;
   const uptime = live && snap?.startedAt ? now - new Date(snap.startedAt).getTime() : 0;
+  const fileJob = useStreamRecord((state) => state.job);
+  const pendingKey = useStreamRecord((state) => state.pendingKey);
+  const pendingBytes = useStreamRecord((state) => state.pendingBytes);
+  const recordingFile = fileJob?.login === channel.key.toLowerCase();
+  const fileWaiting = pendingKey === channel.key.toLowerCase() && pendingBytes > 0;
 
   return (
     <div>
@@ -622,14 +639,23 @@ function Stage({
               Начать запись
             </button>
           ) : null}
-          {session ? (
+          {session || recordingFile ? (
             <button
               type="button"
               className="inline-flex h-11 items-center gap-2 rounded-md border border-line px-3 text-sm text-fg"
               onClick={() => manualStop(channel.id)}
             >
               <Square className="size-4" aria-hidden="true" />
-              Остановить
+              {recordingFile ? "Остановить и скачать" : "Остановить"}
+            </button>
+          ) : fileWaiting ? (
+            <button
+              type="button"
+              className="inline-flex h-11 items-center gap-2 rounded-md bg-fg px-3 text-sm font-medium text-bg"
+              onClick={() => savePendingRecording()}
+            >
+              <Download className="size-4" aria-hidden="true" />
+              Скачать запись · {formatBytes(pendingBytes)}
             </button>
           ) : null}
           {captureOn ? (

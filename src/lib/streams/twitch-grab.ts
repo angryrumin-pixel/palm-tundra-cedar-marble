@@ -41,28 +41,55 @@ async function fileSink(filename: string): Promise<Sink | "cancel" | null> {
   }
 }
 
-function memorySink(baseName: string): Sink & { parts: number } {
+type StashPart = { name: string; chunks: Uint8Array[] };
+
+let saveOnFinish = false;
+let stashed: { key: string; name: string; parts: StashPart[]; bytes: number } | null = null;
+
+export function armSaveOnFinish() {
+  saveOnFinish = true;
+}
+
+export function stashedRecording() {
+  return stashed;
+}
+
+export function downloadStash(): boolean {
+  if (!stashed || stashed.bytes <= 0) return false;
+  for (const part of stashed.parts) downloadBlob(part.name, part.chunks);
+  stashed = null;
+  return true;
+}
+
+function memorySink(baseName: string, defer: boolean) {
   let chunks: Uint8Array[] = [];
   let size = 0;
   let part = 1;
-  const sink = {
-    parts: 1,
+  const saved: StashPart[] = [];
+  const put = (next: Uint8Array[], nextSize: number) => {
+    if (nextSize <= 0) return;
+    const name = part > 1 ? baseName.replace(/\.ts$/, `-${part}.ts`) : baseName;
+    part += 1;
+    if (defer) saved.push({ name, chunks: next });
+    else downloadBlob(name, next);
+  };
+  return {
+    saved,
     write: async (chunk: Uint8Array) => {
       chunks.push(chunk);
       size += chunk.byteLength;
-      if (size >= PART_BYTES) {
-        downloadBlob(baseName.replace(/\.ts$/, "") + `-${part}.ts`, chunks);
-        part += 1;
-        sink.parts = part;
+      if (!defer && size >= PART_BYTES) {
+        put(chunks, size);
         chunks = [];
         size = 0;
       }
     },
     close: async () => {
-      if (size > 0) downloadBlob(baseName.replace(/\.ts$/, "") + (part > 1 ? `-${part}.ts` : ".ts"), chunks);
+      put(chunks, size);
+      chunks = [];
+      size = 0;
     },
   };
-  return sink;
 }
 
 function resolveRef(base: string, ref: string): string {
@@ -108,16 +135,37 @@ export async function grabTwitchStream(
   filename: string,
   signal: AbortSignal,
   onBytes: (bytes: number) => void,
-) {
-  const picked = await fileSink(filename);
-  if (picked === "cancel" || signal.aborted) return;
-  const sink = picked ?? memorySink(filename);
+  options?: {
+    picker?: boolean;
+    refresh?: () => Promise<string | null>;
+    defer?: boolean;
+    stashKey?: string;
+  },
+): Promise<"cancel" | "saved" | "stashed" | "empty"> {
+  const picked = options?.picker === false ? null : await fileSink(filename);
+  if (picked === "cancel") return "cancel";
+  if (signal.aborted) return "empty";
+  const defer = options?.defer === true && !picked;
+  const memory = picked ? null : memorySink(filename, defer);
+  const sink = picked ?? memory;
+  if (!sink) return "empty";
   const seen = new Set<string>();
   let mapWritten = false;
   let bytes = 0;
+  let current = playlistUrl;
   try {
     while (!signal.aborted) {
-      const playlist = await readPlaylist(playlistUrl);
+      let playlist: { text: string; base: string };
+      try {
+        playlist = await readPlaylist(current);
+      } catch (error) {
+        if (signal.aborted || (error instanceof DOMException && error.name === "AbortError")) break;
+        const next = options?.refresh ? await options.refresh() : null;
+        if (!next) throw error;
+        current = next;
+        await new Promise((resolve) => window.setTimeout(resolve, 2000));
+        continue;
+      }
       const { map, segments } = segmentUrls(playlist.text, playlist.base);
       if (map && !mapWritten) {
         const init = await fetch(proxied(map), { signal });
@@ -159,4 +207,18 @@ export async function grabTwitchStream(
   } finally {
     await sink.close();
   }
+  if (!defer || !memory) return "saved";
+  const total = memory.saved.reduce(
+    (sum, part) => sum + part.chunks.reduce((inner, chunk) => inner + chunk.byteLength, 0),
+    0,
+  );
+  if (total <= 0) return "empty";
+  if (saveOnFinish) {
+    saveOnFinish = false;
+    for (const part of memory.saved) downloadBlob(part.name, part.chunks);
+    stashed = null;
+    return "saved";
+  }
+  stashed = { key: options?.stashKey || "", name: filename, parts: memory.saved, bytes: total };
+  return "stashed";
 }
